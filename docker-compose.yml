@@ -197,10 +197,35 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/openlmis_dhis2/postgres_data
   redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/openlmis_dhis2/redis_data
   rabbitmq_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/openlmis_dhis2/rabbitmq_data
   static_volume:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/openlmis_dhis2/static_volume
   logs_volume:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/openlmis_dhis2/logs_volume
 
 
 networks:
