@@ -124,17 +124,17 @@ class Command(BaseCommand):
         updated = 0
         
         for row in rows:
-            openlmis_code = row.get('openlmisCode', '').strip()
+            openlmis_id = row.get('openlmisId', '').strip()
             dhis2_org_unit = row.get('dhis2OrgUnitId', '').strip()
             
-            if not openlmis_code or not dhis2_org_unit:
+            if not openlmis_id or not dhis2_org_unit:
                 continue
             
             if dry_run:
-                self.stdout.write(f"  → Créer/Mettre à jour: {openlmis_code} -> {dhis2_org_unit}")
+                self.stdout.write(f"  → Créer/Mettre à jour: {openlmis_id} -> {dhis2_org_unit}")
             else:
                 obj, was_created = FacilityMapping.objects.update_or_create(
-                    openlmis_facility_code=openlmis_code,
+                    openlmis_facility_id=openlmis_id,
                     defaults={
                         'dhis2_org_unit_id': dhis2_org_unit,
                         'is_active': True,
@@ -165,14 +165,14 @@ class Command(BaseCommand):
         
         for row in rows:
             program_code = row.get('programCode', '').strip()
-            dataset_id = row.get('dataSetId', '').strip()
-            product_code = row.get('productCode', '').strip()
+            dataset_id = row.get('datasetId', '').strip()
+            product_id = row.get('productId', '').strip()
             openlmis_attr = row.get('openlmisAttribute', '').strip()
             dhis2_de_id = row.get('dhis2DeId', '').strip()
             dhis2_coc_id = row.get('dhis2CocId', '').strip()
             description = row.get('desc', '').strip()
             
-            if not product_code or not openlmis_attr or not dhis2_de_id:
+            if not product_id or not openlmis_attr or not dhis2_de_id:
                 elements_skipped += 1
                 continue
             
@@ -205,11 +205,11 @@ class Command(BaseCommand):
             
             if dry_run:
                 self.stdout.write(
-                    f"  → {product_code} ({openlmis_attr}) -> {dhis2_de_id}"
+                    f"  → {product_id} ({openlmis_attr}) -> {dhis2_de_id}"
                 )
             else:
                 obj, was_created = DataElementMapping.objects.update_or_create(
-                    openlmis_product_code=product_code,
+                    openlmis_product_id=product_id,
                     indicator=indicator.value,
                     defaults={
                         'dhis2_data_element_uid': dhis2_de_id,
