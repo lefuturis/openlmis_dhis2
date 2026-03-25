@@ -36,6 +36,8 @@ OPENLMIS_ATTRIBUTE_MAPPING = {
     'negativeAdjustment': IndicatorType.ADJUSTMENTS,
     'closingBalance': IndicatorType.CLOSING_BALANCE,
     'openingBalance': IndicatorType.OPENING_BALANCE,
+    'totalLosses': IndicatorType.LOSSES,
+    'stockoutDays': IndicatorType.STOCKOUT_DAYS,
 }
 
 
