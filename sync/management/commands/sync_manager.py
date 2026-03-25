@@ -214,7 +214,6 @@ class Command(BaseCommand):
                     defaults={
                         'dhis2_data_element_uid': dhis2_de_id,
                         'dhis2_category_option_combo_uid': dhis2_coc_id,
-                        'dhis2_data_element_name': description,
                         'dataset': dataset,
                         'is_active': True,
                     }
