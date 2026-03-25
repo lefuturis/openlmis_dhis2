@@ -1,0 +1,39 @@
+# Django Framework
+Django>=5.0,<6.0
+djangorestframework>=3.14.0
+
+# Celery & Task Queue
+celery[redis]>=5.3.0
+django-celery-beat>=2.5.0
+django-celery-results>=2.5.0
+
+# Message Broker
+kombu>=5.3.0
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Redis
+redis>=5.0.0
+hiredis>=2.3.0
+
+# HTTP Client
+requests>=2.31.0
+urllib3>=2.1.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Logging
+loguru>=0.7.2
+
+# Environment Variables
+python-dotenv>=1.0.0
+python-decouple>=3.8
+
+# Utilities
+pytz>=2024.1
+
+# Development
+ipython>=8.18.0
