@@ -1,5 +1,6 @@
 # Django Framework
 Django>=5.0,<6.0
+django-jazzmin==2.6.0
 djangorestframework>=3.14.0
 gunicorn>=21.2.0
 whitenoise>=6.6.0
@@ -33,6 +34,11 @@ loguru>=0.7.2
 # Environment Variables
 python-dotenv>=1.0.0
 python-decouple>=3.8
+
+# Django Channels (WebSocket)
+daphne>=4.0.0
+channels>=4.0.0
+channels-redis>=4.1.0
 
 # Utilities
 pytz>=2024.1

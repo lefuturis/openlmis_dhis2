@@ -18,8 +18,12 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
+import os
+
 # Application definition
 INSTALLED_APPS = [
+    'jazzmin',
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -30,6 +34,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'django_celery_beat',
     'django_celery_results',
+    'channels',
     # Local apps
     'sync',
 ]
@@ -44,6 +49,24 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# =============================================================================
+# ENVIRONMENT & PRODUCTION SECURITY
+# =============================================================================
+ENVIRONMENT = config('ENVIRONMENT', default='development')
+
+if ENVIRONMENT == 'production':
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Trusted origins for CSRF (e.g. https://lmis-dhis2.example.com)
+trusted_origins = config('CSRF_TRUSTED_ORIGINS', default='')
+if trusted_origins:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in trusted_origins.split(',') if origin.strip()]
 
 ROOT_URLCONF = 'config.urls'
 
@@ -64,6 +87,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -131,6 +155,18 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': config('REDIS_URL', default='redis://localhost:6379/0'),
     }
+}
+
+# =============================================================================
+# DJANGO CHANNELS CONFIGURATION
+# =============================================================================
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [config('REDIS_URL', default='redis://localhost:6379/0')],
+        },
+    },
 }
 
 # =============================================================================
@@ -244,3 +280,79 @@ REST_FRAMEWORK = {
 # DATA FILES DIRECTORY
 # =============================================================================
 DATA_DIR = BASE_DIR / 'data'
+
+# =============================================================================
+# JAZZMIN CONFIGURATION
+# =============================================================================
+JAZZMIN_SETTINGS = {
+    # title of the window (Will default to current_admin_site.site_title if absent or None)
+    "site_title": "OpenLMIS → DHIS2",
+
+    # Title on the login screen (19 chars max)
+    "site_header": "OpenLMIS-DHIS2 Sync",
+
+    # Title on the brand (19 chars max)
+    "site_brand": "Sync Portal",
+
+    # Welcome text on the login screen
+    "welcome_sign": "Connexion au portail OpenLMIS-DHIS2",
+
+    # Copyright on the footer
+    "copyright": "MinSanté",
+
+    # Field name on user model that contains avatar ImageField/URLField/Charfield or a callable that receives the user
+    "user_avatar": None,
+
+    # Top Menu
+    "topmenu_links": [
+        {"name": "Home",  "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "🚀 Lancer la Synchronisation DHIS2", "url": "/admin/sync/manual-sync/", "new_window": False},
+    ],
+
+    # Custom icons for model admin classes (string form of "app_label.model_name" or "app_label")
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.user": "fas fa-user",
+        "auth.Group": "fas fa-users",
+        "sync.DHIS2Server": "fas fa-server",
+        "sync.FacilityMapping": "fas fa-hospital",
+        "sync.DataElementMapping": "fas fa-exchange-alt",
+        "sync.DataSet": "fas fa-database",
+        "sync.SyncSchedule": "fas fa-clock",
+        "sync.SyncLog": "fas fa-list",
+        "sync.AggregatedData": "fas fa-chart-bar",
+        "django_celery_beat.PeriodicTask": "fas fa-tasks",
+        "django_celery_results.TaskResult": "fas fa-clipboard-check",
+    },
+    
+    # Icons that are used when one is not manually specified
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    
+    # Hide these apps when generating side menu e.g (auth)
+    "hide_apps": [],
+
+    # Hide these models when generating side menu (e.g auth.user)
+    "hide_models": [],
+    
+    # Order of apps in the menu
+    "order_with_respect_to": ["sync", "auth"],
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "theme": "pulse",  # Modern clean theme
+    "dark_mode_theme": "darkly",
+    "navbar": "navbar-dark",
+    "navbar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_fixed": True,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "footer_fixed": False,
+    "body_small_text": False,
+}

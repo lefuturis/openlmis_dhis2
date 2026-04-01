@@ -18,6 +18,7 @@ from .models import (
     FacilityMapping, DHIS2Server, SyncLog, SyncStatus, AggregatedData
 )
 from .services import DatabaseExtractor, DHIS2Client
+from .consumers import send_sync_progress
 
 
 def get_period_dates(period: str = None) -> tuple:
@@ -63,6 +64,9 @@ def sync_facility_task(
     self,
     facility_id: str,
     period: str = None,
+    send_progress: bool = False,
+    facility_index: int = 0,
+    total_facilities: int = 0,
 ) -> dict:
     """
     Synchronize stock movements for a single facility.
@@ -70,6 +74,9 @@ def sync_facility_task(
     Args:
         facility_id: OpenLMIS facility UUID
         period: DHIS2 period (YYYYMM). Defaults to previous month.
+        send_progress: If True, send real-time updates via channels.
+        facility_index: Current facility index (for progress display).
+        total_facilities: Total number of facilities being synced.
 
     Returns:
         Dict with sync results
@@ -87,8 +94,31 @@ def sync_facility_task(
         )
     except FacilityMapping.DoesNotExist:
         logger.error(f"Facility UUID {facility_id} not found or inactive")
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_error',
+                'facility_id': facility_id,
+                'facility_name': facility_id[:12],
+                'message': 'Structure non trouvée ou inactive',
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
         return {'status': 'error', 'message': f'Facility {facility_id} not found'}
     
+    facility_name = facility.display_name
+
+    # Send progress: starting
+    if send_progress:
+        send_sync_progress({
+            'type': 'facility_starting',
+            'facility_id': str(facility.openlmis_facility_id),
+            'facility_name': facility_name,
+            'dhis2_org_unit': facility.dhis2_org_unit_id,
+            'period': period_str,
+            'facility_index': facility_index,
+            'total_facilities': total_facilities,
+        }, msg_type='sync_facility_update')
+
     # Create sync log
     sync_log = SyncLog.objects.create(
         facility=facility,
@@ -99,6 +129,7 @@ def sync_facility_task(
     
     result = {
         'facility_id': facility_id,
+        'facility_name': facility_name,
         'period': period_str,
         'status': 'pending',
         'records_extracted': 0,
@@ -112,6 +143,17 @@ def sync_facility_task(
         # STEP A & B: Extraction and Transformation from DB View
         # =====================================================================
         logger.info(f"[{facility_id}] Step A & B: Extracting and mapping data from database view")
+
+        # Send progress: extracting
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_extracting',
+                'facility_id': str(facility.openlmis_facility_id),
+                'facility_name': facility_name,
+                'step': 'Extraction des données',
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
 
         start_date_str = start_date.strftime('%Y-%m-%d')
         extractor = DatabaseExtractor()
@@ -128,6 +170,29 @@ def sync_facility_task(
         sync_log.records_extracted = len(aggregated_data)
         sync_log.records_transformed = len(aggregated_data)
         sync_log.save(update_fields=['records_extracted', 'records_transformed'])
+
+        # Build list of attributes for progress display
+        attributes_sent = []
+        for dv in aggregated_data:
+            attributes_sent.append({
+                'data_element': dv.get('dhis2_data_element_uid', ''),
+                'indicator': dv.get('indicator', ''),
+                'value': dv.get('value', 0),
+                'category_combo': dv.get('dhis2_category_option_combo_uid', ''),
+            })
+
+        # Send progress: extracted
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_extracted',
+                'facility_id': str(facility.openlmis_facility_id),
+                'facility_name': facility_name,
+                'records_extracted': len(aggregated_data),
+                'attributes': attributes_sent[:20],  # Limit for display
+                'total_attributes': len(attributes_sent),
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
         
         if not aggregated_data:
             logger.warning(f"[{facility_id}] No data to push for period {period_str}")
@@ -137,6 +202,20 @@ def sync_facility_task(
             sync_log.save()
             result['status'] = 'success'
             result['message'] = 'No data to sync'
+
+            if send_progress:
+                send_sync_progress({
+                    'type': 'facility_completed',
+                    'facility_id': str(facility.openlmis_facility_id),
+                    'facility_name': facility_name,
+                    'status': 'success',
+                    'message': 'Aucune donnée à synchroniser',
+                    'records_extracted': 0,
+                    'records_loaded': 0,
+                    'records_failed': 0,
+                    'facility_index': facility_index,
+                    'total_facilities': total_facilities,
+                }, msg_type='sync_facility_update')
             return result
         
         # Store aggregated data for audit
@@ -159,6 +238,18 @@ def sync_facility_task(
         # STEP C: Loading to DHIS2
         # =====================================================================
         logger.info(f"[{facility_id}] Step C: Pushing data to DHIS2")
+
+        # Send progress: pushing
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_pushing',
+                'facility_id': str(facility.openlmis_facility_id),
+                'facility_name': facility_name,
+                'step': 'Envoi vers DHIS2',
+                'records_to_push': len(aggregated_data),
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
         
         with DHIS2Client(server=facility.server) as dhis2:
             response = dhis2.submit_data_values(
@@ -204,6 +295,25 @@ def sync_facility_task(
         
         sync_log.completed_at = timezone.now()
         sync_log.save()
+
+        # Send progress: completed
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_completed',
+                'facility_id': str(facility.openlmis_facility_id),
+                'facility_name': facility_name,
+                'status': result['status'],
+                'records_extracted': result['records_extracted'],
+                'records_loaded': records_loaded,
+                'records_failed': records_failed,
+                'dhis2_response_summary': {
+                    'imported': response.get('imported', 0),
+                    'updated': response.get('updated', 0),
+                    'ignored': response.get('ignored', 0),
+                },
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
         
         return result
         
@@ -217,6 +327,17 @@ def sync_facility_task(
         
         result['status'] = 'error'
         result['message'] = str(e)
+
+        # Send progress: failed
+        if send_progress:
+            send_sync_progress({
+                'type': 'facility_failed',
+                'facility_id': facility_id,
+                'facility_name': facility_name if 'facility_name' in dir() else facility_id[:12],
+                'error': str(e),
+                'facility_index': facility_index,
+                'total_facilities': total_facilities,
+            }, msg_type='sync_facility_update')
         
         # Re-raise to trigger Celery retry
         raise
@@ -275,6 +396,123 @@ def sync_all_facilities_task(self, period: str = None) -> dict:
         'facilities_count': facility_count,
         'tasks': task_results
     }
+
+
+@shared_task(bind=True)
+def manual_sync_task(self, period: str = None) -> dict:
+    """
+    Manual sync task triggered from the admin UI.
+    
+    Unlike sync_all_facilities_task, this task:
+    - Sends real-time progress updates via Django Channels
+    - Runs facility syncs sequentially for clear progress tracking
+    - Reports detailed attribute information
+    
+    Args:
+        period: DHIS2 period (YYYYMM)
+        
+    Returns:
+        Dict with sync summary
+    """
+    period_str, start_date, end_date = get_period_dates(period)
+    month_name = start_date.strftime('%B %Y')
+    
+    logger.info(f"[Manual Sync] Starting for period: {month_name}")
+    
+    # Get all active facilities
+    facilities = list(FacilityMapping.objects.filter(is_active=True))
+    total = len(facilities)
+    
+    if total == 0:
+        send_sync_progress({
+            'type': 'sync_finished',
+            'status': 'warning',
+            'message': 'Aucune structure active trouvée',
+            'period': period_str,
+        }, msg_type='sync_finished')
+        return {'status': 'warning', 'message': 'No active facilities'}
+    
+    # Notify: sync started
+    send_sync_progress({
+        'type': 'sync_started',
+        'period': period_str,
+        'period_label': month_name,
+        'total_facilities': total,
+        'facilities': [
+            {
+                'id': str(f.openlmis_facility_id),
+                'name': f.display_name,
+                'dhis2_org_unit': f.dhis2_org_unit_id,
+            }
+            for f in facilities
+        ],
+    }, msg_type='sync_started')
+    
+    # Process facilities sequentially for clear progress
+    results = {
+        'success': 0,
+        'partial': 0,
+        'failed': 0,
+        'no_data': 0,
+        'details': [],
+    }
+    
+    for idx, facility in enumerate(facilities):
+        fid = str(facility.openlmis_facility_id)
+        try:
+            # Call sync directly (not .delay()) so we get sequential execution
+            result = sync_facility_task.apply(
+                kwargs={
+                    'facility_id': fid,
+                    'period': period_str,
+                    'send_progress': True,
+                    'facility_index': idx + 1,
+                    'total_facilities': total,
+                },
+            ).get(timeout=600)  # 10 min timeout per facility
+            
+            status = result.get('status', 'error')
+            if status == 'success':
+                if result.get('records_extracted', 0) == 0:
+                    results['no_data'] += 1
+                else:
+                    results['success'] += 1
+            elif status == 'partial':
+                results['partial'] += 1
+            else:
+                results['failed'] += 1
+            
+            results['details'].append(result)
+            
+        except Exception as e:
+            logger.error(f"[Manual Sync] Failed for {fid}: {e}")
+            results['failed'] += 1
+            results['details'].append({
+                'facility_id': fid,
+                'facility_name': facility.display_name,
+                'status': 'error',
+                'message': str(e),
+            })
+    
+    # Notify: sync finished
+    summary = {
+        'type': 'sync_finished',
+        'status': 'completed',
+        'period': period_str,
+        'period_label': month_name,
+        'total_facilities': total,
+        'success_count': results['success'],
+        'partial_count': results['partial'],
+        'failed_count': results['failed'],
+        'no_data_count': results['no_data'],
+    }
+    send_sync_progress(summary, msg_type='sync_finished')
+    
+    logger.info(f"[Manual Sync] Completed. Success: {results['success']}, "
+                f"Partial: {results['partial']}, Failed: {results['failed']}, "
+                f"No data: {results['no_data']}")
+    
+    return summary
 
 
 @shared_task

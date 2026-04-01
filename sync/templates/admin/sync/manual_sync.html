@@ -1,0 +1,847 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Synchronisation Manuelle - {{ title }}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    :root {
+        --primary: #417690;
+        --primary-dark: #205067;
+        --success: #28a745;
+        --warning: #ffc107;
+        --danger: #dc3545;
+        --info: #17a2b8;
+        --bg-dark: #1a1d23;
+        --bg-card: #21252b;
+        --bg-surface: #282c34;
+        --text-primary: #e4e6eb;
+        --text-secondary: #b0b3b8;
+        --border: #3e4451;
+        --glow-primary: rgba(65, 118, 144, 0.3);
+    }
+
+    .sync-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    /* ── Form Card ───────────────────────────────────── */
+    .sync-form-card {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        padding: 28px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .sync-form-card h2 {
+        color: var(--primary-dark);
+        margin: 0 0 20px 0;
+        font-size: 1.4em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .sync-form-card h2::before {
+        content: '🔄';
+        font-size: 1.2em;
+    }
+    .form-row {
+        display: flex;
+        gap: 16px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .form-group label {
+        font-weight: 600;
+        color: #495057;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .form-group select {
+        padding: 10px 16px;
+        border: 2px solid #ced4da;
+        border-radius: 8px;
+        font-size: 1em;
+        background: #fff;
+        min-width: 160px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+    }
+    .form-group select:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--glow-primary);
+        outline: none;
+    }
+    #btn-start-sync {
+        padding: 10px 28px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(65, 118, 144, 0.3);
+    }
+    #btn-start-sync:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(65, 118, 144, 0.4);
+    }
+    #btn-start-sync:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+    #btn-start-sync .spinner {
+        display: none;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    #btn-start-sync.loading .spinner { display: inline-block; }
+    #btn-start-sync.loading .btn-text { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Connection Badge ────────────────────────────── */
+    .ws-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: 600;
+        margin-left: auto;
+    }
+    .ws-status.connected {
+        background: rgba(40, 167, 69, 0.1);
+        color: var(--success);
+    }
+    .ws-status.disconnected {
+        background: rgba(220, 53, 69, 0.1);
+        color: var(--danger);
+    }
+    .ws-status .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+    .ws-status.connected .dot {
+        animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+
+    /* ── Progress Section ────────────────────────────── */
+    .progress-section {
+        display: none;
+    }
+    .progress-section.visible {
+        display: block;
+    }
+
+    /* Global Progress Bar */
+    .global-progress {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .global-progress h3 {
+        margin: 0 0 12px;
+        color: #495057;
+        font-size: 1.1em;
+    }
+    .progress-bar-track {
+        height: 28px;
+        background: #e9ecef;
+        border-radius: 14px;
+        overflow: hidden;
+        position: relative;
+    }
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary), var(--info));
+        border-radius: 14px;
+        transition: width 0.5s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+    }
+    .progress-bar-fill span {
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.85em;
+        text-shadow: 0 1px 2px rgba(0,0,0,.3);
+        white-space: nowrap;
+    }
+    .progress-stats {
+        display: flex;
+        gap: 20px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+    }
+    .stat-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.85em;
+        font-weight: 600;
+    }
+    .stat-chip.success { background: rgba(40,167,69,.1); color: var(--success); }
+    .stat-chip.warning { background: rgba(255,193,7,.1); color: #856404; }
+    .stat-chip.danger  { background: rgba(220,53,69,.1); color: var(--danger); }
+    .stat-chip.info    { background: rgba(23,162,184,.1); color: var(--info); }
+
+    /* ── Facility Table ──────────────────────────────── */
+    .facility-table-wrapper {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .facility-table-wrapper h3 {
+        margin: 0;
+        padding: 16px 20px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        color: #495057;
+        font-size: 1.05em;
+    }
+    table.facility-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+    }
+    table.facility-table th {
+        background: var(--primary-dark);
+        color: #fff;
+        padding: 12px 16px;
+        text-align: left;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.8em;
+        letter-spacing: 0.5px;
+    }
+    table.facility-table td {
+        padding: 10px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        vertical-align: middle;
+    }
+    table.facility-table tr:last-child td {
+        border-bottom: none;
+    }
+    table.facility-table tr:hover {
+        background: #f8f9fa;
+    }
+    table.facility-table tr.active-row {
+        background: rgba(23,162,184,.05);
+    }
+
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.85em;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .status-badge.pending   { background: #e9ecef; color: #6c757d; }
+    .status-badge.running   { background: rgba(23,162,184,.12); color: var(--info); }
+    .status-badge.success   { background: rgba(40,167,69,.12); color: var(--success); }
+    .status-badge.partial   { background: rgba(255,193,7,.12); color: #856404; }
+    .status-badge.failed    { background: rgba(220,53,69,.12); color: var(--danger); }
+    .status-badge.no-data   { background: #e9ecef; color: #6c757d; }
+
+    .status-badge .badge-spinner {
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(23,162,184,.3);
+        border-top-color: var(--info);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    /* Attributes pill list */
+    .attr-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: 300px;
+    }
+    .attr-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75em;
+        background: rgba(65,118,144,.08);
+        color: var(--primary-dark);
+        font-family: monospace;
+        white-space: nowrap;
+    }
+    .attr-more {
+        font-size: 0.75em;
+        color: #6c757d;
+        font-style: italic;
+    }
+
+    /* ── Log Console ─────────────────────────────────── */
+    .log-console {
+        background: var(--bg-dark);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .log-console h3 {
+        margin: 0;
+        padding: 12px 20px;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-size: 0.95em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+    }
+    .log-console h3::before { content: '📋'; }
+    .log-entries {
+        padding: 12px 16px;
+        max-height: 320px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.82em;
+        line-height: 1.6;
+    }
+    .log-entry {
+        color: var(--text-secondary);
+        padding: 2px 0;
+    }
+    .log-entry .time { color: #6c757d; }
+    .log-entry.info  { color: var(--info); }
+    .log-entry.success { color: var(--success); }
+    .log-entry.error { color: var(--danger); }
+    .log-entry.warn  { color: var(--warning); }
+
+    /* ── Summary Card ─────────────────────────────────── */
+    .sync-summary {
+        display: none;
+        background: linear-gradient(135deg, #f0faf0 0%, #e8f5e9 100%);
+        border: 1px solid #c8e6c9;
+        border-radius: 12px;
+        padding: 24px;
+        margin-top: 20px;
+        text-align: center;
+    }
+    .sync-summary.visible { display: block; }
+    .sync-summary.has-errors {
+        background: linear-gradient(135deg, #fff3f0 0%, #fce4ec 100%);
+        border-color: #ef9a9a;
+    }
+    .sync-summary h3 {
+        margin: 0 0 16px;
+        font-size: 1.3em;
+    }
+    .summary-grid {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+    .summary-item {
+        text-align: center;
+    }
+    .summary-item .count {
+        font-size: 2em;
+        font-weight: 700;
+    }
+    .summary-item .label {
+        font-size: 0.85em;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sync-container">
+
+    <!-- ── Form ──────────────────────────────────── -->
+    <div class="sync-form-card">
+        <h2>
+            Synchronisation Manuelle DHIS2
+            <span id="ws-status" class="ws-status disconnected">
+                <span class="dot"></span>
+                <span class="label">Déconnecté</span>
+            </span>
+        </h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="select-year">Année</label>
+                <select id="select-year"></select>
+            </div>
+            <div class="form-group">
+                <label for="select-month">Mois</label>
+                <select id="select-month">
+                    <option value="1">Janvier</option>
+                    <option value="2">Février</option>
+                    <option value="3">Mars</option>
+                    <option value="4">Avril</option>
+                    <option value="5">Mai</option>
+                    <option value="6">Juin</option>
+                    <option value="7">Juillet</option>
+                    <option value="8">Août</option>
+                    <option value="9">Septembre</option>
+                    <option value="10">Octobre</option>
+                    <option value="11">Novembre</option>
+                    <option value="12">Décembre</option>
+                </select>
+            </div>
+            <button id="btn-start-sync" type="button" disabled>
+                <span class="spinner"></span>
+                <span class="btn-text">🚀 Lancer la synchronisation</span>
+                <span class="loading-text" style="display:none;">Synchronisation en cours…</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Progress ──────────────────────────────── -->
+    <div id="progress-section" class="progress-section">
+
+        <!-- Global progress bar -->
+        <div class="global-progress">
+            <h3 id="progress-title">Progression globale</h3>
+            <div class="progress-bar-track">
+                <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;">
+                    <span id="progress-bar-text">0%</span>
+                </div>
+            </div>
+            <div class="progress-stats">
+                <span class="stat-chip success" id="stat-success">✓ <span>0</span> Succès</span>
+                <span class="stat-chip warning" id="stat-partial">⚠ <span>0</span> Partiel</span>
+                <span class="stat-chip danger"  id="stat-failed">✗ <span>0</span> Échoué</span>
+                <span class="stat-chip info"    id="stat-nodata">○ <span>0</span> Sans données</span>
+            </div>
+        </div>
+
+        <!-- Facility table -->
+        <div class="facility-table-wrapper">
+            <h3>Détail par structure</h3>
+            <div style="overflow-x:auto;">
+                <table class="facility-table">
+                    <thead>
+                        <tr>
+                            <th style="width:5%">#</th>
+                            <th style="width:22%">Structure</th>
+                            <th style="width:12%">Org Unit DHIS2</th>
+                            <th style="width:10%">Statut</th>
+                            <th style="width:8%">Extraits</th>
+                            <th style="width:8%">Envoyés</th>
+                            <th style="width:8%">Échoués</th>
+                            <th style="width:27%">Attributs envoyés</th>
+                        </tr>
+                    </thead>
+                    <tbody id="facility-tbody">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Log console -->
+        <div class="log-console">
+            <h3>Journal d'exécution</h3>
+            <div id="log-entries" class="log-entries">
+                <!-- Log lines appended here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Summary ───────────────────────────────── -->
+    <div id="sync-summary" class="sync-summary">
+        <h3 id="summary-title">✅ Synchronisation terminée</h3>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="count" style="color:var(--success)" id="sum-success">0</div>
+                <div class="label">Succès</div>
+            </div>
+            <div class="summary-item">
+                <div class="count" style="color:#856404" id="sum-partial">0</div>
+                <div class="label">Partiel</div>
+            </div>
+            <div class="summary-item">
+                <div class="count" style="color:var(--danger)" id="sum-failed">0</div>
+                <div class="label">Échoué</div>
+            </div>
+            <div class="summary-item">
+                <div class="count" style="color:var(--info)" id="sum-nodata">0</div>
+                <div class="label">Sans données</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extrajs %}
+{{ block.super }}
+<script>
+(function() {
+    'use strict';
+
+    // ── State ──────────────────────────────────────
+    let ws = null;
+    let facilityMap = {};   // facility_id → row element
+    let stats = { success: 0, partial: 0, failed: 0, noData: 0, completed: 0, total: 0 };
+    let syncRunning = false;
+
+    // ── DOM refs ───────────────────────────────────
+    const selectYear  = document.getElementById('select-year');
+    const selectMonth = document.getElementById('select-month');
+    const btnSync     = document.getElementById('btn-start-sync');
+    const wsStatus    = document.getElementById('ws-status');
+    const progressSection = document.getElementById('progress-section');
+    const progressFill    = document.getElementById('progress-bar-fill');
+    const progressText    = document.getElementById('progress-bar-text');
+    const progressTitle   = document.getElementById('progress-title');
+    const facilityTbody   = document.getElementById('facility-tbody');
+    const logEntries      = document.getElementById('log-entries');
+    const summaryDiv      = document.getElementById('sync-summary');
+
+    // ── Initialize year selector ───────────────────
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear; y >= 2020; y--) {
+        const opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y;
+        selectYear.appendChild(opt);
+    }
+    // Default to previous month
+    const prevDate = new Date();
+    prevDate.setMonth(prevDate.getMonth() - 1);
+    selectYear.value  = prevDate.getFullYear();
+    selectMonth.value = prevDate.getMonth() + 1;
+
+    // ── WebSocket ──────────────────────────────────
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/sync/progress/`;
+        
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function() {
+            updateWsStatus(true);
+            btnSync.disabled = false;
+            addLog('Connexion WebSocket établie', 'info');
+        };
+
+        ws.onclose = function(e) {
+            updateWsStatus(false);
+            if (!syncRunning) btnSync.disabled = true;
+            addLog('Connexion WebSocket fermée. Reconnexion dans 3s…', 'warn');
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = function(e) {
+            addLog('Erreur WebSocket', 'error');
+        };
+
+        ws.onmessage = function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                handleMessage(data);
+            } catch (err) {
+                console.error('Failed to parse WS message:', err);
+            }
+        };
+    }
+
+    function updateWsStatus(connected) {
+        wsStatus.className = 'ws-status ' + (connected ? 'connected' : 'disconnected');
+        wsStatus.querySelector('.label').textContent = connected ? 'Connecté' : 'Déconnecté';
+    }
+
+    // ── Start sync ─────────────────────────────────
+    btnSync.addEventListener('click', function() {
+        if (syncRunning) return;
+
+        const year  = selectYear.value;
+        const month = selectMonth.value;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert('La connexion WebSocket n\'est pas établie. Veuillez patienter.');
+            return;
+        }
+
+        // Reset UI
+        resetProgress();
+        syncRunning = true;
+        btnSync.disabled = true;
+        btnSync.classList.add('loading');
+
+        ws.send(JSON.stringify({
+            action: 'start_sync',
+            year: parseInt(year),
+            month: parseInt(month),
+        }));
+
+        const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin',
+                           'Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+        addLog(`Synchronisation lancée pour ${monthNames[month-1]} ${year}`, 'info');
+    });
+
+    // ── Message handler ────────────────────────────
+    function handleMessage(data) {
+        const type = data.type;
+
+        switch (type) {
+            case 'sync_dispatched':
+                addLog(`Tâche de synchronisation créée (ID: ${data.task_id})`, 'info');
+                break;
+
+            case 'sync_started':
+                handleSyncStarted(data);
+                break;
+
+            case 'facility_starting':
+            case 'facility_extracting':
+            case 'facility_extracted':
+            case 'facility_pushing':
+            case 'facility_completed':
+            case 'facility_failed':
+            case 'facility_error':
+                handleFacilityUpdate(data);
+                break;
+
+            case 'sync_finished':
+                handleSyncFinished(data);
+                break;
+
+            case 'error':
+                addLog(`Erreur: ${data.message}`, 'error');
+                syncRunning = false;
+                btnSync.disabled = false;
+                btnSync.classList.remove('loading');
+                break;
+
+            case 'pong':
+                break;
+
+            default:
+                console.log('Unknown message type:', type, data);
+        }
+    }
+
+    function handleSyncStarted(data) {
+        stats.total = data.total_facilities;
+        progressSection.classList.add('visible');
+        progressTitle.textContent = `Progression globale — ${data.period_label} (${stats.total} structures)`;
+        addLog(`Synchronisation démarrée: ${stats.total} structures à traiter pour ${data.period_label}`, 'info');
+
+        // Populate facility table
+        facilityTbody.innerHTML = '';
+        facilityMap = {};
+        (data.facilities || []).forEach(function(f, idx) {
+            const tr = document.createElement('tr');
+            tr.id = 'frow-' + f.id;
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td><strong>${escapeHtml(f.name)}</strong></td>
+                <td><code>${escapeHtml(f.dhis2_org_unit)}</code></td>
+                <td><span class="status-badge pending">En attente</span></td>
+                <td class="cell-extracted">-</td>
+                <td class="cell-loaded">-</td>
+                <td class="cell-failed">-</td>
+                <td class="cell-attrs">-</td>
+            `;
+            facilityTbody.appendChild(tr);
+            facilityMap[f.id] = tr;
+        });
+    }
+
+    function handleFacilityUpdate(data) {
+        const fid = data.facility_id;
+        const row = facilityMap[fid];
+        if (!row) return;
+
+        const statusCell = row.querySelector('td:nth-child(4)');
+        const extractedCell = row.querySelector('.cell-extracted');
+        const loadedCell    = row.querySelector('.cell-loaded');
+        const failedCell    = row.querySelector('.cell-failed');
+        const attrsCell     = row.querySelector('.cell-attrs');
+
+        switch (data.type) {
+            case 'facility_starting':
+                statusCell.innerHTML = '<span class="status-badge running"><span class="badge-spinner"></span> Démarrage</span>';
+                row.classList.add('active-row');
+                addLog(`▶ ${data.facility_name}: Démarrage (${data.facility_index}/${data.total_facilities})`, 'info');
+                break;
+
+            case 'facility_extracting':
+                statusCell.innerHTML = '<span class="status-badge running"><span class="badge-spinner"></span> Extraction</span>';
+                addLog(`  📦 ${data.facility_name}: ${data.step}`, 'info');
+                break;
+
+            case 'facility_extracted':
+                extractedCell.textContent = data.records_extracted;
+                addLog(`  📊 ${data.facility_name}: ${data.records_extracted} enregistrements extraits`, 'info');
+                // Show attributes
+                if (data.attributes && data.attributes.length > 0) {
+                    let html = '<div class="attr-list">';
+                    data.attributes.slice(0, 8).forEach(function(a) {
+                        html += `<span class="attr-pill" title="${a.indicator}: ${a.value}">${a.data_element} (${a.value})</span>`;
+                    });
+                    if (data.total_attributes > 8) {
+                        html += `<span class="attr-more">+${data.total_attributes - 8} autres</span>`;
+                    }
+                    html += '</div>';
+                    attrsCell.innerHTML = html;
+                }
+                break;
+
+            case 'facility_pushing':
+                statusCell.innerHTML = '<span class="status-badge running"><span class="badge-spinner"></span> Envoi DHIS2</span>';
+                addLog(`  🚀 ${data.facility_name}: Envoi de ${data.records_to_push} valeurs vers DHIS2`, 'info');
+                break;
+
+            case 'facility_completed':
+                row.classList.remove('active-row');
+                loadedCell.textContent = data.records_loaded || 0;
+                failedCell.textContent = data.records_failed || 0;
+
+                if (data.status === 'success' && (data.records_extracted || 0) === 0) {
+                    statusCell.innerHTML = '<span class="status-badge no-data">○ Sans données</span>';
+                    stats.noData++;
+                    addLog(`  ○ ${data.facility_name}: Aucune donnée`, 'warn');
+                } else if (data.status === 'success') {
+                    statusCell.innerHTML = '<span class="status-badge success">✓ Succès</span>';
+                    stats.success++;
+                    addLog(`  ✅ ${data.facility_name}: Succès (${data.records_loaded} envoyés)`, 'success');
+                } else if (data.status === 'partial') {
+                    statusCell.innerHTML = '<span class="status-badge partial">⚠ Partiel</span>';
+                    stats.partial++;
+                    addLog(`  ⚠️ ${data.facility_name}: Partiel (${data.records_loaded} OK, ${data.records_failed} échoués)`, 'warn');
+                } else {
+                    statusCell.innerHTML = '<span class="status-badge failed">✗ Échoué</span>';
+                    stats.failed++;
+                    addLog(`  ❌ ${data.facility_name}: Échec`, 'error');
+                }
+
+                stats.completed++;
+                updateProgressBar();
+                break;
+
+            case 'facility_failed':
+            case 'facility_error':
+                row.classList.remove('active-row');
+                statusCell.innerHTML = '<span class="status-badge failed">✗ Erreur</span>';
+                stats.failed++;
+                stats.completed++;
+                updateProgressBar();
+                addLog(`  ❌ ${data.facility_name}: ${data.error || data.message || 'Erreur'}`, 'error');
+                break;
+        }
+    }
+
+    function handleSyncFinished(data) {
+        syncRunning = false;
+        btnSync.disabled = false;
+        btnSync.classList.remove('loading');
+
+        addLog(`\n═══════════════════════════════════════`, 'info');
+        addLog(`Synchronisation terminée pour ${data.period_label}`, 'success');
+        addLog(`  Succès: ${data.success_count || 0} | Partiel: ${data.partial_count || 0} | Échoué: ${data.failed_count || 0} | Sans données: ${data.no_data_count || 0}`, 'info');
+
+        // Show summary card
+        summaryDiv.classList.add('visible');
+        if ((data.failed_count || 0) > 0) {
+            summaryDiv.classList.add('has-errors');
+            document.getElementById('summary-title').textContent = '⚠️ Synchronisation terminée avec des erreurs';
+        } else {
+            document.getElementById('summary-title').textContent = '✅ Synchronisation terminée avec succès';
+        }
+        document.getElementById('sum-success').textContent = data.success_count || 0;
+        document.getElementById('sum-partial').textContent = data.partial_count || 0;
+        document.getElementById('sum-failed').textContent  = data.failed_count || 0;
+        document.getElementById('sum-nodata').textContent  = data.no_data_count || 0;
+    }
+
+    // ── Helpers ─────────────────────────────────────
+    function updateProgressBar() {
+        const pct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+        progressFill.style.width = pct + '%';
+        progressText.textContent = `${stats.completed} / ${stats.total} (${pct}%)`;
+
+        document.querySelector('#stat-success span').textContent = stats.success;
+        document.querySelector('#stat-partial span').textContent = stats.partial;
+        document.querySelector('#stat-failed span').textContent  = stats.failed;
+        document.querySelector('#stat-nodata span').textContent  = stats.noData;
+    }
+
+    function resetProgress() {
+        stats = { success: 0, partial: 0, failed: 0, noData: 0, completed: 0, total: 0 };
+        facilityMap = {};
+        facilityTbody.innerHTML = '';
+        progressFill.style.width = '0%';
+        progressText.textContent = '0%';
+        logEntries.innerHTML = '';
+        summaryDiv.classList.remove('visible', 'has-errors');
+        progressSection.classList.remove('visible');
+        document.querySelector('#stat-success span').textContent = '0';
+        document.querySelector('#stat-partial span').textContent = '0';
+        document.querySelector('#stat-failed span').textContent  = '0';
+        document.querySelector('#stat-nodata span').textContent  = '0';
+    }
+
+    function addLog(msg, level) {
+        const now = new Date();
+        const time = now.toLocaleTimeString('fr-FR');
+        const div = document.createElement('div');
+        div.className = 'log-entry ' + (level || '');
+        div.innerHTML = `<span class="time">[${time}]</span> ${escapeHtml(msg)}`;
+        logEntries.appendChild(div);
+        logEntries.scrollTop = logEntries.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    // ── Init ───────────────────────────────────────
+    connectWebSocket();
+})();
+</script>
+{% endblock %}

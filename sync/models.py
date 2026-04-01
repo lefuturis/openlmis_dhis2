@@ -34,6 +34,12 @@ class FacilityMapping(models.Model):
     Mapping between OpenLMIS facility UUID and DHIS2 organisation unit UID.
     Source: analytics.fact_stock_monthly.facility_id
     """
+    name = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Nom lisible de la structure de santé"
+    )
     openlmis_facility_id = models.UUIDField(
         unique=True,
         db_index=True,
@@ -64,7 +70,13 @@ class FacilityMapping(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.openlmis_facility_id} -> {self.dhis2_org_unit_id}"
+        label = self.name or str(self.openlmis_facility_id)
+        return f"{label} -> {self.dhis2_org_unit_id}"
+
+    @property
+    def display_name(self):
+        """Return name if set, otherwise short UUID."""
+        return self.name or str(self.openlmis_facility_id)[:12]
 
 
 class IndicatorType(models.TextChoices):
