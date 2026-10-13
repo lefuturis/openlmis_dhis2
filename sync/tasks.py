@@ -259,8 +259,16 @@ def sync_facility_task(
             )
         
         # Process response
-        records_loaded = response.get('imported', 0) + response.get('updated', 0)
-        records_failed = response.get('ignored', 0)
+        # DHIS2 reports a value identical to the stored one as "ignored" with no conflict:
+        # it is in DHIS2 with the right value, so it must not be counted as a failure.
+        # Ignored values are only real rejections when DHIS2 returns conflicts.
+        ignored = response.get('ignored', 0)
+        has_conflicts = bool(response.get('conflicts'))
+        records_failed = ignored if has_conflicts else 0
+        records_loaded = (
+            response.get('imported', 0) + response.get('updated', 0)
+            + (0 if has_conflicts else ignored)
+        )
         
         result['records_loaded'] = records_loaded
         result['records_failed'] = records_failed

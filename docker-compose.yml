@@ -187,7 +187,7 @@ services:
     restart: unless-stopped
     command: celery -A config flower --port=5555
     ports:
-      - "5556:5555"
+      - "127.0.0.1:5556:5555" # pas d'auth : accès via tunnel SSH uniquement
     environment:
       - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER:-rabbitmq}:${RABBITMQ_DEFAULT_PASS:-rabbitmq}@rabbitmq:5672//
       - REDIS_URL=redis://redis:6379/0
