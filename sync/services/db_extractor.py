@@ -89,6 +89,10 @@ class DatabaseExtractor:
         except Exception as e:
             logger.error(f"Failed to query database for facility {facility_id}: {e}")
             raise
+        finally:
+            # The reporting role is capped at a few connections (rolconnlimit=3 in prod):
+            # release it right away instead of keeping it open in the Celery worker process.
+            connections['openlmis_reporting'].close()
 
         logger.info(f"Found {len(monthly_data)} product records for facility {facility_id}")
 
@@ -110,10 +114,22 @@ class DatabaseExtractor:
                     missing_mappings.add(f"{product_id}:{indicator}")
                     continue
 
+                # ADJUSTMENTS is signed (DHIS2 COC "Adjustment Plus Minus", valueType INTEGER):
+                # a net outflow must stay negative. Every other indicator targets a
+                # "Zero or Positive Integer" data element, so a negative value is a data
+                # quality issue in OpenLMIS: skip it rather than silently flipping its sign.
+                int_value = int(round(float(value)))
+                if int_value < 0 and indicator != IndicatorType.ADJUSTMENTS:
+                    logger.warning(
+                        f"Negative {indicator} ({int_value}) for product_id='{product_id}' "
+                        f"facility_id={facility_id}: value skipped"
+                    )
+                    continue
+
                 data_value = {
                     'product_id': product_id,
                     'indicator': indicator,
-                    'value': int(abs(float(value))),
+                    'value': int_value,
                     'dhis2_data_element_uid': mapping.dhis2_data_element_uid,
                     'dhis2_category_option_combo_uid': mapping.dhis2_category_option_combo_uid,
                     'period': period,

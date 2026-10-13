@@ -134,3 +134,6 @@ Thumbs.db
 logs/
 staticfiles/
 *.env.local
+
+# SSH keys
+*.pem
