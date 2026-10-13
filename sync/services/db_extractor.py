@@ -89,6 +89,10 @@ class DatabaseExtractor:
         except Exception as e:
             logger.error(f"Failed to query database for facility {facility_id}: {e}")
             raise
+        finally:
+            # The reporting role is capped at a few connections (rolconnlimit=3 in prod):
+            # release it right away instead of keeping it open in the Celery worker process.
+            connections['openlmis_reporting'].close()
 
         logger.info(f"Found {len(monthly_data)} product records for facility {facility_id}")
 

@@ -112,7 +112,8 @@ services:
       dockerfile: Dockerfile
     container_name: openlmis_dhis2_celery_worker
     restart: unless-stopped
-    command: celery -A config worker --loglevel=info --concurrency=4
+    # Concurrency kept under the reporting DB role limit (dhis2_sync: 3 connections)
+    command: celery -A config worker --loglevel=info --concurrency=2
     volumes:
       - .:/app
       - logs_volume:/app/logs
