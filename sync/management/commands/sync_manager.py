@@ -38,6 +38,7 @@ OPENLMIS_ATTRIBUTE_MAPPING = {
     'openingBalance': IndicatorType.OPENING_BALANCE,
     'totalLosses': IndicatorType.LOSSES,
     'stockoutDays': IndicatorType.STOCKOUT_DAYS,
+    'totalStockoutDays': IndicatorType.STOCKOUT_DAYS,
 }
 
 
@@ -66,6 +67,11 @@ class Command(BaseCommand):
             '--dry-run',
             action='store_true',
             help="Afficher ce qui serait fait sans appliquer les changements"
+        )
+        parser.add_argument(
+            '--replace',
+            action='store_true',
+            help="Avec config: désactiver les structures et mappings absents des CSV"
         )
         parser.add_argument(
             '--data-dir',
@@ -106,16 +112,18 @@ class Command(BaseCommand):
         
         self.stdout.write(f"\n🛠️  Chargement des configurations depuis {data_dir}")
         
+        replace = options['replace']
+
         # Import des facilities
-        self._import_facilities(data_dir, dry_run)
+        self._import_facilities(data_dir, dry_run, replace)
         
         # Import des data mappings
-        self._import_data_mappings(data_dir, dry_run)
+        self._import_data_mappings(data_dir, dry_run, replace)
         
         self.stdout.write(self.style.SUCCESS("\n✅ Configuration importée avec succès!"))
     
     @transaction.atomic
-    def _import_facilities(self, data_dir: Path, dry_run: bool):
+    def _import_facilities(self, data_dir: Path, dry_run: bool, replace: bool = False):
         """Importer facilities.csv"""
         filepath = data_dir / 'facilities.csv'
         rows = self._read_csv(filepath)
@@ -124,6 +132,7 @@ class Command(BaseCommand):
         
         created = 0
         updated = 0
+        seen_ids = set()
         
         for row in rows:
             openlmis_id = row.get('openlmisId', '').strip()
@@ -131,6 +140,7 @@ class Command(BaseCommand):
             
             if not openlmis_id or not dhis2_org_unit:
                 continue
+            seen_ids.add(openlmis_id)
             
             if dry_run:
                 self.stdout.write(f"  → Créer/Mettre à jour: {openlmis_id} -> {dhis2_org_unit}")
@@ -150,9 +160,15 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f"  📊 Structures: {created} créées, {updated} mises à jour")
         )
-    
+
+        if replace:
+            stale = FacilityMapping.objects.filter(is_active=True).exclude(openlmis_facility_id__in=seen_ids)
+            self.stdout.write(f"  🗑️  Structures absentes du CSV à désactiver: {stale.count()}")
+            if not dry_run:
+                stale.update(is_active=False)
+
     @transaction.atomic
-    def _import_data_mappings(self, data_dir: Path, dry_run: bool):
+    def _import_data_mappings(self, data_dir: Path, dry_run: bool, replace: bool = False):
         """Importer data_mapping.csv"""
         filepath = data_dir / 'data_mapping.csv'
         rows = self._read_csv(filepath)
@@ -164,7 +180,8 @@ class Command(BaseCommand):
         elements_created = 0
         elements_updated = 0
         elements_skipped = 0
-        
+        seen_keys = set()
+
         for row in rows:
             program_code = row.get('programCode', '').strip()
             dataset_id = row.get('datasetId', '').strip()
@@ -186,7 +203,8 @@ class Command(BaseCommand):
                 )
                 elements_skipped += 1
                 continue
-            
+            seen_keys.add((product_id, indicator.value))
+
             # Create/get DataSet if not already processed
             dataset = None
             if dataset_id and dataset_id not in datasets_seen:
@@ -235,7 +253,16 @@ class Command(BaseCommand):
                 f"  📊 Éléments: {elements_created} créés, {elements_updated} mis à jour, {elements_skipped} ignorés"
             )
         )
-    
+
+        if replace:
+            stale_ids = [
+                m.id for m in DataElementMapping.objects.filter(is_active=True)
+                if (str(m.openlmis_product_id), m.indicator) not in seen_keys
+            ]
+            self.stdout.write(f"  🗑️  Mappings absents du CSV à désactiver: {len(stale_ids)}")
+            if not dry_run:
+                DataElementMapping.objects.filter(id__in=stale_ids).update(is_active=False)
+
     def _trigger_sync(self, options, dry_run: bool):
         """Déclencher la synchronisation."""
         period = options.get('period')

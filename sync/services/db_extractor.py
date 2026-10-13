@@ -110,10 +110,22 @@ class DatabaseExtractor:
                     missing_mappings.add(f"{product_id}:{indicator}")
                     continue
 
+                # ADJUSTMENTS is signed (DHIS2 COC "Adjustment Plus Minus", valueType INTEGER):
+                # a net outflow must stay negative. Every other indicator targets a
+                # "Zero or Positive Integer" data element, so a negative value is a data
+                # quality issue in OpenLMIS: skip it rather than silently flipping its sign.
+                int_value = int(round(float(value)))
+                if int_value < 0 and indicator != IndicatorType.ADJUSTMENTS:
+                    logger.warning(
+                        f"Negative {indicator} ({int_value}) for product_id='{product_id}' "
+                        f"facility_id={facility_id}: value skipped"
+                    )
+                    continue
+
                 data_value = {
                     'product_id': product_id,
                     'indicator': indicator,
-                    'value': int(abs(float(value))),
+                    'value': int_value,
                     'dhis2_data_element_uid': mapping.dhis2_data_element_uid,
                     'dhis2_category_option_combo_uid': mapping.dhis2_category_option_combo_uid,
                     'period': period,
